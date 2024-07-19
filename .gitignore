@@ -1,0 +1,10 @@
+# Supabase
+.branches
+.temp
+.env
+
+# Node
+node_modules/
+
+# OS files
+.DS_Store
