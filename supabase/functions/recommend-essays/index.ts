@@ -71,7 +71,7 @@ Deno.serve(async (req) => {
     }
 
     const formattedDocuments = documents.map(document => ({
-      id
+      id: document.id,
       title: document.title,
       url: document.essay_url
     }))
