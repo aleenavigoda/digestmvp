@@ -7,7 +7,6 @@ import OpenAI from 'https://esm.sh/openai@4.52.7'
 import { getEncoding } from 'https://esm.sh/js-tiktoken@1.0.12'
 import * as cheerio from "https://esm.sh/cheerio@1.0.0-rc.12";
 
-
 export const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -84,64 +83,65 @@ async function extractDomainFromHtml(url: string): Promise<string | null> {
     return null;
   }
 }
-Deno.serve(async (req) => {
-  // Handle CORS
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
-  }
 
-  const supabaseurl = Deno.env.get('BASE_URL')
-  const servicerolekey = Deno.env.get('SERVICE_ROLE_KEY')
-  const client = createClient(supabaseurl, servicerolekey);
+Deno.serve(async (req: Request) => {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+  const client = createClient(supabaseUrl, supabaseKey);
+  const openai = new OpenAI({
+    apiKey: Deno.env.get('OPENAI_API_KEY')!
+  });
 
-  const { url } = await req.json()
-
-  // Extract domain from HTML
-  const domain = await extractDomainFromHtml(url);
-
-  const { data: existingEssay, error: checkError } = await client
+  // Fetch all essays
+  const { data: essays, error } = await client
     .from('Essays')
-    .select('id, title, embedding, domain')
-    .eq('essay_url', url)
-    .maybeSingle();
+    .select('*');
 
-  let embedding;
-  if (existingEssay) {
-    embedding = existingEssay.embedding;
-    domain = existingEssay.domain;
-  } else {
-    const response = await fetch(url);
-    const content = await response.text();
-    const $ = cheerio.load(content);
-    const title = $('title').first().text();
-
-    const input = content.replace(/\n/g, ' ')
-    embedding = await chonker(input, 2000)
-
-    // In production we should handle possible errors
-    const { error: createError } = await client.from('Essays').insert({
-      title,
-      essay_url: url,
-      content,
-      embedding,
-      domain, // Add the extracted domain to the insert operation
-    })
-    if (createError) console.log(createError)
+  if (error) {
+    console.error('Error fetching essays:', error);
+    return new Response(JSON.stringify({ error: 'Failed to fetch essays' }), { status: 500 });
   }
 
-  // In production we should handle possible errors
-  const { data: documents, error } = await client.rpc('match_essays', {
-    query_embedding: embedding,
-    match_threshold: 0.2, // Choose an appropriate threshold for your data
-    match_count: 10, // Choose the number of matches
-  })
-  if (error) console.log(error)
+  for (const essay of essays) {
+    let updates: any = {};
 
-  return new Response(JSON.stringify(documents.map(document => ({
-    url: document.essay_url,
-    title: document.title,
-    domain: document.domain // Include domain in the response if available
-  }))), {
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-  })
+    // Process only if necessary
+    if (!essay.title || !essay.content) {
+      const response = await fetch(essay.essay_url);
+      const html = await response.text();
+      const $ = cheerio.load(html);
+
+      if (!essay.title) {
+        updates.title = $('title').first().text();
+      }
+      if (!essay.content) {
+        updates.content = $('body').text();
+      }
+    }
+
+    if (!essay.domain) {
+      updates.domain = await extractDomainFromHtml(essay.essay_url);
+    }
+
+    if (!essay.embedding) {
+      const input = (essay.content || updates.content).replace(/\n/g, ' ');
+      updates.embedding = await chonker(input, 2000);
+    }
+
+    // Skip updating if no updates are needed
+    if (Object.keys(updates).length === 0) {
+      continue;
+    }
+
+    const { error: updateError } = await client
+      .from('Essays')
+      .update(updates)
+      .eq('id', essay.id);
+
+    if (updateError) {
+      console.error(`Error updating essay ${essay.id}:`, updateError);
+    }
+  }
+
+  return new Response(JSON.stringify({ message: 'Update complete' }), { status: 200 });
 })

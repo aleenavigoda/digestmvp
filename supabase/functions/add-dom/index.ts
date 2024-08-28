@@ -105,10 +105,10 @@ Deno.serve(async (req) => {
     .eq('essay_url', url)
     .maybeSingle();
 
-  let embedding;
+  let embedding, existingDomain;
   if (existingEssay) {
     embedding = existingEssay.embedding;
-    domain = existingEssay.domain;
+    existingDomain = existingEssay.domain;
   } else {
     const response = await fetch(url);
     const content = await response.text();
@@ -137,11 +137,21 @@ Deno.serve(async (req) => {
   })
   if (error) console.log(error)
 
-  return new Response(JSON.stringify(documents.map(document => ({
-    url: document.essay_url,
-    title: document.title,
-    domain: document.domain // Include domain in the response if available
-  }))), {
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-  })
+  if (existingEssay) {
+    return new Response(JSON.stringify({
+      url: existingEssay.essay_url,
+      title: existingEssay.title,
+      domain: existingDomain || domain
+    }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  } else {
+    return new Response(JSON.stringify({
+      url: url,
+      title: title,
+      domain: domain
+    }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
 })
