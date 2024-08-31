@@ -4,11 +4,11 @@ const axios = require('axios');
 const { getEncoding } = require("js-tiktoken");
 const math = require('mathjs');
 
-const client = createClient('https://ctyrqfzockxyqoughgqv.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN0eXJxZnpvY2t4eXFvdWdoZ3F2Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTcyMTA4NTkyOSwiZXhwIjoyMDM2NjYxOTI5fQ.fG_-RIS2Rz70UycDL0ZOWRbf5ncvajSfWEXdNa2dDfk')
+const client = createClient('https://ctyrqfzockxyqoughgqv.supabase.co', Deno.env.get('SERVICE_ROLE_KEY'));
 const openai = new OpenAI({
-    apiKey: 'sk-None-tGCJ3br8vhAVyEyw9so9T3BlbkFJwr5CbpIYtWqCVRgK21aH'
-  });
-  const modelName = "cl100k_base";  // This is the base tokenizer for GPT-3 and the text embedding model
+    apiKey: Deno.env.get('OPENAI_API_KEY')
+});
+const modelName = "cl100k_base";  // This is the base tokenizer for GPT-3 and the text embedding model
 
 const getDocuments = async () => {
     try {

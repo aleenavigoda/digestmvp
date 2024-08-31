@@ -1,0 +1,24 @@
+{
+  "name": "digestmvp",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.44.4",
+    "axios": "^1.7.2",
+    "csv-parser": "^3.0.0",
+    "js-tiktoken": "^1.0.12",
+    "mathjs": "^13.0.2",
+    "natural": "^7.1.0",
+    "openai": "^4.52.7",
+    "resend": "^4.0.0"
+  },
+  "devDependencies": {
+    "supabase": "^1.187.10"
+  }
+}
