@@ -54,81 +54,61 @@ async function chonker(text, chunkSize = 8192, overlapSize = 100) {
   return calculateAverageEmbedding(embeddings);
 }
 
-async function processEssay(url, client) {
-  const response = await fetch(url);
-  const content = await response.text();
-  const $ = cheerio.load(content);
-  const title = $('title').first().text();
-
-  const input = content.replace(/\n/g, ' ')
-  const embedding = await chonker(input, 2000)
-
-  const { data, error } = await client.from('Essays').insert({
-    title,
-    essay_url: url,
-    content,
-    embedding,
-    essay_img_url: null // You might want to extract this from the content if available
-  }).select()
-
-  if (error) {
-    console.error(`Error inserting essay ${url}:`, error)
-    return null
-  }
-
-  return data[0]
-}
-
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
   try {
-    const { 
-      urls, 
-      bookshelfId,
-      shelfName
-    } = await req.json()
-    
-    if (!Array.isArray(urls) || urls.length === 0) {
-      throw new Error('Invalid or empty URLs array')
+    const { url, bookshelfId, shelfName } = await req.json()
+
+    if (!url) {
+      throw new Error('URL is required')
     }
 
     if (!bookshelfId || !shelfName) {
       throw new Error('bookshelfId and shelfName are required')
     }
 
+    const response = await fetch(url);
+    const content = await response.text();
+    const $ = cheerio.load(content);
+    const title = $('title').first().text();
+
+    const input = content.replace(/\n/g, ' ')
+    const embedding = await chonker(input, 2000)
+
     const supabaseurl = Deno.env.get('BASE_URL')
     const servicerolekey = Deno.env.get('SERVICE_ROLE_KEY')
     const client = createClient(supabaseurl, servicerolekey);
 
-    // Process essays in parallel
-    const essayPromises = urls.map(url => processEssay(url, client))
-    const essays = await Promise.all(essayPromises)
+    const { data: essay, error: createError } = await client.from('Essays').insert({
+      title,
+      essay_url: url,
+      content,
+      embedding,
+    }).select()
 
-    // Filter out any null values (failed insertions)
-    const validEssays = essays.filter(essay => essay !== null)
+    if (createError) {
+      throw new Error(`Error inserting essay: ${createError.message}`)
+    }
 
-    // Insert into bookshelf_essays table
-    const bookshelfEssays = validEssays.map(essay => ({
+    // Link essay to bookshelf
+    const { error: linkError } = await client.from('bookshelf_essays').insert({
       bookshelf_id: bookshelfId,
-      essay_id: essay.id,
-      essay_title: essay.title,
+      essay_id: essay[0].id,
+      essay_title: essay[0].title,
       bookshelf_name: shelfName
-    }))
-
-    const { error: linkError } = await client
-      .from('bookshelf_essays')
-      .insert(bookshelfEssays)
+    })
 
     if (linkError) {
-      throw new Error(`Error linking essays to bookshelf: ${linkError.message}`)
+      throw new Error(`Error linking essay to bookshelf: ${linkError.message}`)
     }
 
     return new Response(JSON.stringify({
-      message: "Essays added successfully",
-      addedEssays: validEssays.length,
+      message: "Essay processed and linked to bookshelf",
+      essayId: essay[0].id,
+      title: essay[0].title,
       bookshelfId,
       shelfName
     }), {
@@ -136,7 +116,7 @@ Deno.serve(async (req) => {
     })
 
   } catch (error) {
-    console.error('Error in add-essays-bulk:', error)
+    console.error('Error in function:', error)
     return new Response(JSON.stringify({ error: error.message }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 500

@@ -2,10 +2,14 @@ import numpy as np
 from supabase import create_client, Client
 from sklearn.cluster import KMeans
 import ast  # For safely converting strings to lists
+from dotenv import load_dotenv
+import os
+
+load_dotenv()  # Load environment variables from .env file
 
 # Initialize the Supabase client
-url = "https://ctyrqfzockxyqoughgqv.supabase.co"
-key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN0eXJxZnpvY2t4eXFvdWdoZ3F2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MjEwODU5MjksImV4cCI6MjAzNjY2MTkyOX0.8wo7JoGmshWAiJCFKysRAyjPMBLU5KfdoZwy7ST4D3E"
+url = os.getenv("SUPABASE_URL")
+key = os.getenv("SUPABASE_KEY")
 supabase: Client = create_client(url, key)
 
 # Fetch the embeddings from your Supabase database

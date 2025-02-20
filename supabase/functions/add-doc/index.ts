@@ -7,7 +7,6 @@ import OpenAI from 'https://esm.sh/openai@4.52.7'
 import { getEncoding } from 'https://esm.sh/js-tiktoken@1.0.12'
 import * as cheerio from "https://esm.sh/cheerio@1.0.0-rc.12";
 
-
 export const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -38,28 +37,28 @@ async function chonker(text, chunkSize = 8192, overlapSize = 100) {
     apiKey: Deno.env.get('OPENAI_API_KEY')
   });
   // Create chunks
-const chunks = [];
-for (let i = 0; i < tokens.length; i += chunkSize - overlapSize) {
-  const chunkTokens = tokens.slice(i, i + chunkSize);
-  chunks.push(encoding.decode(chunkTokens));  
-}
+  const chunks = [];
+  for (let i = 0; i < tokens.length; i += chunkSize - overlapSize) {
+    const chunkTokens = tokens.slice(i, i + chunkSize);
+    chunks.push(encoding.decode(chunkTokens));  
+  }
 
-let embeddings = []
+  let embeddings = []
 
-// Get embeddings for each chunk
-for (const chunk of chunks) {
-  const embeddingResponse = await openai.embeddings.create({
-      model: 'text-embedding-3-small',
-      input: chunk
-  })
-  const [{ embedding }] = embeddingResponse.data
-  embeddings.push(embedding);
-}
+  // Get embeddings for each chunk
+  for (const chunk of chunks) {
+    const embeddingResponse = await openai.embeddings.create({
+        model: 'text-embedding-3-small',
+        input: chunk
+    })
+    const [{ embedding }] = embeddingResponse.data
+    embeddings.push(embedding);
+  }
 
-// Average the embeddings
-const averageEmbedding = calculateAverageEmbedding(embeddings);
+  // Average the embeddings
+  const averageEmbedding = calculateAverageEmbedding(embeddings);
 
-return averageEmbedding;
+  return averageEmbedding;
 }
 
 async function extractDomainFromHtml(url: string): Promise<string | null> {
@@ -84,6 +83,7 @@ async function extractDomainFromHtml(url: string): Promise<string | null> {
     return null;
   }
 }
+
 Deno.serve(async (req) => {
   // Handle CORS
   if (req.method === 'OPTIONS') {
@@ -101,14 +101,15 @@ Deno.serve(async (req) => {
 
   const { data: existingEssay, error: checkError } = await client
     .from('Essays')
-    .select('id, title, embedding, domain')
+    .select('id, title, embedding, domain, essay_url')
     .eq('essay_url', url)
     .maybeSingle();
 
-  let embedding;
+  let embedding, essayId, essayUrl;
   if (existingEssay) {
     embedding = existingEssay.embedding;
-    domain = existingEssay.domain;
+    essayId = existingEssay.id;
+    essayUrl = existingEssay.essay_url;
   } else {
     const response = await fetch(url);
     const content = await response.text();
@@ -118,15 +119,29 @@ Deno.serve(async (req) => {
     const input = content.replace(/\n/g, ' ')
     embedding = await chonker(input, 2000)
 
-    // In production we should handle possible errors
-    const { error: createError } = await client.from('Essays').insert({
-      title,
-      essay_url: url,
-      content,
-      embedding,
-      domain, // Add the extracted domain to the insert operation
-    })
-    if (createError) console.log(createError)
+    // Insert the new essay and retrieve the ID
+    const { data: newEssay, error: createError } = await client
+      .from('Essays')
+      .insert({
+        title,
+        essay_url: url,
+        content,
+        embedding,
+        domain,
+      })
+      .select('id, essay_url')
+      .single();
+
+    if (createError) {
+      console.log(createError);
+      return new Response(JSON.stringify({ error: 'Failed to insert new essay' }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    essayId = newEssay.id;
+    essayUrl = newEssay.essay_url;
   }
 
   // In production we should handle possible errors
@@ -137,11 +152,16 @@ Deno.serve(async (req) => {
   })
   if (error) console.log(error)
 
-  return new Response(JSON.stringify(documents.map(document => ({
-    url: document.essay_url,
-    title: document.title,
-    domain: document.domain // Include domain in the response if available
-  }))), {
+  return new Response(JSON.stringify({
+    id: essayId,
+    url: essayUrl,
+    similar_essays: documents.map(document => ({
+      id: document.id,
+      url: document.essay_url,
+      title: document.title,
+      domain: document.domain
+    }))
+  }), {
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   })
 })
